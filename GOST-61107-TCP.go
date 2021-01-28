@@ -34,6 +34,9 @@ type Dev struct {
   Bytes_out uint64
   Bytes_since time.Time
   Mode string
+  Address string
+  Maker string
+  Model string
   Delay time.Duration
 }
 
@@ -43,7 +46,7 @@ type Message struct {
   Body string
 }
 
-func Init(ip string, port string, mode string, timeout time.Duration, stop_ch chan string) (*Dev) {
+func Init(ip string, port string, address string, mode string, timeout time.Duration, stop_ch chan string) (*Dev) {
 
   if mode != "0" && mode != "1" {
     panic("Unknown mode passed")
@@ -61,6 +64,7 @@ func Init(ip string, port string, mode string, timeout time.Duration, stop_ch ch
   dev.Bytes_out=0
   dev.Bytes_since=time.Now()
   dev.Mode=mode
+  dev.Address=address
   dev.Delay=300*time.Millisecond
   return dev
 }
@@ -328,7 +332,7 @@ func (dev *Dev) Connect() (error) {
   dev.Connected=true
 
   //send start request
-  start_req := []byte("/?!\r\n")
+  start_req := []byte("/?"+dev.Address+"!\r\n")
   if dev.Debug {
     fmt.Println("  Sending start request")
   }
@@ -352,6 +356,9 @@ func (dev *Dev) Connect() (error) {
     dev.Close()
     return errors.New("Too short ident reply")
   }
+
+  dev.Maker = ident[1:4]
+  dev.Model = ident[5:]
 
   // fith char is baud rate of device, leave it as is
   baud_rate_char := ident[4:5]

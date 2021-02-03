@@ -11,6 +11,7 @@ import (
   _ "strings"
   _ "bytes"
   _ "encoding/hex"
+  //"runtime/debug"
 )
 
 const MAX_REPLY_LEN int = 4096
@@ -70,8 +71,9 @@ func Init(ip string, port string, address string, mode string, timeout time.Dura
 }
 
 func (dev *Dev) Close() {
+  //debug.PrintStack()
   if(dev.conn != nil) {
-    dev.SendBytes([]byte("\x01\x42\x30\x03\x75"))
+    dev.SendBytes([]byte("\x01\x42\x30\x03\x75"), false)
     if(dev.Debug) { fmt.Println("Closing connection") }
     dev.conn.Close()
     dev.Connected=false
@@ -296,9 +298,9 @@ func (dev *Dev) ReadCRLF() (string, error) {
   }
 }
 
-func (dev *Dev) SendBytes(bytes []byte) (error) {
+func (dev *Dev) SendBytes(bytes []byte, close_on_error bool) (error) {
   err := dev.conn.SetDeadline(time.Now().Add(dev.timeout))
-  if(err != nil) { dev.Close(); return err }
+  if(err != nil) { if close_on_error { dev.Close();}; return err }
 
   if dev.Debug {
     fmt.Print("< ")
@@ -306,15 +308,15 @@ func (dev *Dev) SendBytes(bytes []byte) (error) {
   }
 
   sent, err := dev.conn.Write(bytes)
-  if(err != nil) { dev.Close(); return err }
+  if(err != nil) { if close_on_error { dev.Close(); }; return err }
 
   dev.Bytes_out += uint64(sent)
-  if(sent != len(bytes)) { dev.Close(); return errors.New("short write") }
+  if(sent != len(bytes)) { if close_on_error { dev.Close(); }; return errors.New("short write") }
 
   select {
     case cmd := <-dev.stop_ch:
       if(cmd == "stop") {
-        dev.Close();
+        if close_on_error { dev.Close(); };
         return errors.New("exit signalled")
       }
     default:
@@ -331,12 +333,16 @@ func (dev *Dev) Connect() (error) {
   if(err != nil) { return err }
   dev.Connected=true
 
+  //cancel anything
+  dev.SendBytes([]byte("\x01\x42\x30\x03\x75"), true)
+  time.Sleep(200*time.Millisecond)
+
   //send start request
   start_req := []byte("/?"+dev.Address+"!\r\n")
   if dev.Debug {
     fmt.Println("  Sending start request")
   }
-  err = dev.SendBytes(start_req)
+  err = dev.SendBytes(start_req, true)
   if(err != nil) { return err }
 
   //get ident reply
@@ -380,7 +386,7 @@ func (dev *Dev) Connect() (error) {
     fmt.Println("  Sending Acknowledge")
   }
 
-  err = dev.SendBytes(mode_select)
+  err = dev.SendBytes(mode_select, true)
   if(err != nil) { return err }
 
 
@@ -421,7 +427,7 @@ func (dev *Dev) Query(head, body string) (*Message, error) {
 
   time.Sleep(dev.Delay)
 
-  err := dev.SendBytes(send)
+  err := dev.SendBytes(send, true)
   if err != nil {
     return nil, err
   }
